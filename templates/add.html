@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Add New Topic</title>
+</head>
+<body>
+    <h1>Add New Topic</h1>
+    <form method="POST">
+        <label for="topic_name">Topic Name:</label><br>
+        <input type="text" id="topic_name" name="topic_name" required><br><br>
+
+        <label for="answer">Answer:</label><br>
+        <textarea id="answer" name="answer" rows="5" cols="50" required></textarea><br><br>
+
+        <label for="references">Questions (one per line, 3-4 recommended):</label><br>
+        <textarea id="references" name="references" rows="5" cols="50" required></textarea><br><br>
+
+        <input type="submit" value="Add Topic">
+    </form>
+    <a href="{{ url_for('admin') }}">Back to Admin</a>
+</body>
+</html>

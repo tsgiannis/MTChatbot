@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin - Manage FAQs</title>
+</head>
+<body>
+    <h1>Manage FAQs</h1>
+    <a href="{{ url_for('add_topic') }}">Add New Topic</a>
+    <ul>
+        {% for topic in topics %}
+        <li>
+            {{ topic }}
+            <a href="{{ url_for('edit_topic', topic_name=topic) }}">Edit</a>
+        </li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

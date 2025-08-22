@@ -1,0 +1,832 @@
+<style>
+  /* === Chatbot frame / layout (4 fixed areas) === */
+  #chatbot-container{
+    position: fixed; bottom: 30px; right: 30px; width: 400px; max-width: 90vw;
+    font-family: 'Segoe UI', sans-serif; z-index: 9999; display: flex; flex-direction: column-reverse; align-items: flex-end;
+  }
+  #chatbot-toggle{
+    background: #0a84ff; border-radius: 50%; width: 80px; height: 80px; border: none; cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,0,0,.3); display: flex; align-items: center; justify-content: center;
+    transition: transform .3s ease, background .3s ease; margin-top: 20px;
+  }
+  #chatbot-window {
+    display: none; /* toggled by the button */
+    flex-direction: column;
+    height: 640px; /* adjust if you want taller/shorter */
+    width: 400px;
+    max-width: 92vw;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #f8f9fa;
+    border: 1px solid #d8dbe0;
+    box-shadow: 0 10px 28px rgba(0,0,0,.18);
+  }
+  /* Use flex for robust fixed regions */
+  .cb-video-area       { flex: 0 0 33%; position: relative; background: #000; min-height: 180px; }
+  .cb-caption-area     { flex: 0 0 112px; padding: 8px; background: rgba(0,0,0,.78); color: #fff; overflow-y: auto; }
+  .cb-buttons-area     { flex: 1 1 auto; min-height: 0; padding: 10px; overflow-y: auto; background: #fff; }
+  .cb-input-area       { flex: 0 0 46px; border-top: 1px solid #e9ecef; background: #fff; display: flex; align-items: center; padding: 6px 8px; gap: 8px; }
+
+  /* Video and image elements */
+  #chatbot-video, #chatbot-image { width: 100%; height: 100%; object-fit: contain; }
+  .cb-video-ctl {
+    position: absolute; right: 8px; bottom: 8px; z-index: 3;
+    background: rgba(0,0,0,.55); color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer;
+  }
+  #cb-skip-intro { position: absolute; left: 8px; top: 8px; right: auto; bottom: auto; font-size: 12px; padding: 4px 8px; }
+  #cb-tap-to-play {
+    position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 2;
+    color: #fff; background: rgba(0,0,0,.35); font-weight: 600; cursor: pointer; user-select: none;
+  }
+
+  /* Loading indicator */
+  .video-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.7);
+    z-index: 5;
+    color: white;
+  }
+  .video-loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top: 4px solid #fff;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Caption: fixed height ~ 160 chars, scroll if longer */
+  #cb-caption-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.35em;
+    font-size: 14px;
+    min-height: 1.35em;
+    max-height: 100%;
+    overflow-y: auto;
+    display: block;
+    padding-right: 5px;
+  }
+  #cb-caption-meta { margin-top: 6px; font-size: 12px; }
+  .blinking-cursor { display: inline-block; animation: cbBlink 1s infinite; }
+  @keyframes cbBlink { 0%,100% { opacity: 1 } 50% { opacity: 0 } }
+
+  /* Hyperlink styling in caption */
+  .cb-caption-link {
+    color: #0a84ff;
+    text-decoration: underline;
+    cursor: pointer;
+    transition: color 0.2s ease;
+  }
+  .cb-caption-link:hover {
+    color: #40c4ff;
+  }
+
+  /* Buttons grid (independent of caption) */
+  .cb-buttons-area {
+    display: grid;      
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 8px;
+  }
+
+  /* === mt-navigation_button with improved text scaling === */
+  .mt-navigation_button {
+    align-items: center;
+    appearance: none;
+    background-image: radial-gradient(100% 100% at 100% 0, #5adaff 0, #5468ff 100%);
+    border: 0;
+    border-radius: 8px;
+    box-shadow:
+      rgba(45, 35, 66, .4) 0 2px 4px,
+      rgba(45, 35, 66, .3) 0 7px 13px -3px,
+      rgba(58, 65, 111, .5) 0 -3px 0 inset;
+    box-sizing: border-box;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    line-height: 1.2;
+    overflow: hidden;
+    padding: 10px 8px;
+    position: relative;
+    text-decoration: none;
+    transition: box-shadow .15s, transform .15s;
+    user-select: none;
+    touch-action: manipulation;
+    white-space: normal;
+    word-break: break-word;
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    height: auto;
+    min-height: 44px;
+    text-align: center;
+    
+    /* Improved text scaling */
+    font-size: clamp(10px, 2.5vw, 14px);
+  }
+  
+  /* Special class for buttons with longer text */
+  .mt-navigation_button.long-text {
+    font-size: clamp(8px, 2vw, 12px);
+    padding: 8px 6px;
+  }
+  
+  .mt-navigation_button:focus {
+    box-shadow:
+      #3c4fe0 0 0 0 1.5px inset,
+      rgba(45, 35, 66, .4) 0 2px 4px,
+      rgba(45, 35, 66, .3) 0 7px 13px -3px,
+      #3c4fe0 0 -3px 0 inset;
+  }
+  .mt-navigation_button:hover {
+    box-shadow:
+      rgba(45, 35, 66, .4) 0 4px 8px,
+      rgba(45, 35, 66, .3) 0 7px 13px -3px,
+      #3c4fe0 0 -3px 0 inset;
+    transform: translateY(-2px);
+  }
+  .mt-navigation_button:active {
+    box-shadow: #3c4fe0 0 3px 7px inset;
+    transform: translateY(2px);
+  }
+  .btn-helper { background-image: radial-gradient(100% 100% at 100% 0, #c2c8ff 0, #6b7cff 100%); }
+
+  /* Input area and help button */
+  .cb-input { flex: 1; max-width: 85%; height: 100%; border: 0; outline: 0; font-size: 14px; background: transparent; }
+  .cb-help-btn {
+    width: 24px; height: 24px; border-radius: 50%; border: none;
+    background: rgba(0,0,0,0.1); color: #333; font-size: 14px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s ease;
+  }
+  .cb-help-btn:hover { background: rgba(0,0,0,0.2); }
+
+  /* Cloud-like widget */
+  #cb-help-widget {
+    display: none;
+    position: absolute;
+    bottom: 60px; /* Above input area */
+    right: 8px;
+    background: #fff;
+    border-radius: 12px;
+    padding: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    font-size: 12px;
+    color: #333;
+    max-width: 200px;
+    text-align: left;
+    z-index: 10000;
+  }
+  #cb-help-widget::after {
+    content: '';
+    position: absolute;
+    bottom: -8px;
+    right: 12px;
+    border: 8px solid transparent;
+    border-top-color: #fff;
+  }
+</style>
+
+<!-- === Minimal HTML skeleton (ids must exist) === -->
+<div id="chatbot-container">
+<div id="chatbot-window">
+  <div class="cb-video-area" id="cb-video-area">
+    <video id="chatbot-video" playsinline preload="auto" loading="eager"></video>
+    <img id="chatbot-image" style="display: none;" src="https://ms-access.iceiy.com/wp-content/uploads/chatbot/avatars/placeholder.jpg" alt="Digital Assistant">
+    <div class="video-loading" id="video-loading">
+      <div class="video-loading-spinner"></div>
+    </div>
+    <div id="cb-tap-to-play">Tap to Play ▶</div>
+    <button id="cb-unmute" class="cb-video-ctl">🔊</button>
+    <!-- Skip Intro is injected only during intro -->
+  </div>
+
+  <div class="cb-caption-area" id="cb-caption-area">
+    <div id="cb-caption-text"></div>
+    <div id="cb-caption-meta"></div>
+  </div>
+
+  <div class="cb-buttons-area" id="cb-buttons-area"></div>
+
+  <div class="cb-input-area">
+    <input class="cb-input" type="text" placeholder="(Coming soon)"/>
+    <button class="cb-help-btn" id="cb-help-btn">?</button>
+  </div>
+  <div id="cb-help-widget">Video Chatbot, designed and implemented by John Tsioumpris tsgiannis@gmail.com</div>
+</div>
+	<button id="chatbot-toggle"><img id="chatbot-icon" alt="Chat" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiIHdpZHRoPSIzNiIgaGVpZ2h0PSIzNiI+PHBhdGggZD0iTTIwIDJINEMyLjkgMiAyIDIuOSAyIDR2MTUuOWMwIC43LjQgMS42IDEuMSAyLjFsMi4xIDEuNXYtNGgxNWMxLjEgMCAyLS45IDItMlY0YzAtMS1xLjktMi0yLTJ6bTAgMTRoLTE1VjRoMTV2MTJ6Ii8+PC9zdmc+"/></button>
+</div>
+
+<script>
+"use strict";
+
+document.addEventListener('DOMContentLoaded', function () {
+  try {
+    console.log('Chatbot: Script initialized at', new Date().toLocaleString('en-US', { timeZone: 'Europe/Athens' }));
+
+    /* ======= Elements ======= */
+    const win          = document.getElementById('chatbot-window');
+    const toggleBtn    = document.getElementById('chatbot-toggle');
+    const videoArea    = document.getElementById('cb-video-area');
+    const video        = document.getElementById('chatbot-video');
+    const image        = document.getElementById('chatbot-image');
+    const videoLoading = document.getElementById('video-loading');
+    const tapToPlay    = document.getElementById('cb-tap-to-play');
+    const unmuteBtn    = document.getElementById('cb-unmute');
+    const captionArea  = document.getElementById('cb-caption-area');
+    const captionText  = document.getElementById('cb-caption-text');
+    const captionMeta  = document.getElementById('cb-caption-meta');
+    const buttonsArea  = document.getElementById('cb-buttons-area');
+    const helpBtn      = document.getElementById('cb-help-btn');
+    const helpWidget   = document.getElementById('cb-help-widget');
+
+    if (!win || !video || !image || !captionArea || !buttonsArea || !helpBtn || !helpWidget) { 
+      console.warn('Chatbot: Required elements missing'); 
+      return; 
+    }
+
+    /* ======= Config ======= */
+    const API_ENDPOINT = 'https://ms-access.iceiy.com/wp-json/chatbot/v1/data';
+    const PLACEHOLDER_IMAGE = 'https://ms-access.iceiy.com/wp-content/uploads/chatbot/avatars/placeholder.jpg';
+    let data = null;
+    let path = [];
+    let introPlayed = false; // Reset on page load
+    let videoPreloads = new Map(); // Cache for preloaded videos
+    const urlParams = new URLSearchParams(window.location.search);
+    const forceIntro = urlParams.get('forceIntro') === '1'; // Allow forcing intro via ?forceIntro=1
+    let rafId = null; // For typing animation
+
+    // Clear localStorage on page load to reset intro
+    localStorage.removeItem('cb_intro_played');
+    console.log('Storage: Cleared cb_intro_played on page load');
+
+    /* ======= Helpers ======= */
+    function showWindow(show) {
+      win.style.display = show ? 'flex' : 'none';
+      console.log(`Window: Setting display to ${show ? 'flex' : 'none'}`);
+    }
+    function clearCaption() {
+      captionText.textContent = '';
+      captionMeta.innerHTML = '';
+    }
+    function setIntroPlayed() {
+      introPlayed = true;
+      localStorage.setItem('cb_intro_played', '1');
+      console.log('Storage: Set cb_intro_played to 1');
+    }
+    
+    // Show/hide loading indicator
+    function showVideoLoading(show) {
+      videoLoading.style.display = show ? 'flex' : 'none';
+    }
+
+    // Stop current video and typing
+    function stopCurrentVideo() {
+      console.log('Stopping current video and typing');
+      video.pause();
+      video.currentTime = 0;
+      video.removeAttribute('src');
+      video.style.display = 'none';
+      image.style.display = 'none';
+      tapToPlay.style.display = 'none';
+      cancelAnimationFrame(rafId);
+      clearCaption();
+    }
+
+    // Show static image and ready message
+    function showStaticImage() {
+      console.log('StaticImage: Showing placeholder image and ready message');
+      video.style.display = 'none';
+      image.src = PLACEHOLDER_IMAGE;
+      image.style.display = 'block';
+      captionText.textContent = 'Ψηφιακός Βοηθός έτοιμος για να σας εξυπηρετήσει';
+      captionMeta.innerHTML = '';
+    }
+
+    /* ======= Video Preloading ======= */
+    async function preloadVideo(src) {
+      if (!src) {
+        console.log('Preload: No video source provided');
+        return null;
+      }
+      
+      // Return from cache if already preloaded
+      if (videoPreloads.has(src)) {
+        console.log(`Preload: Video ${src} already in cache`);
+        return videoPreloads.get(src);
+      }
+      
+      console.log(`Preload: Starting preload for ${src}`);
+      return new Promise((resolve) => {
+        const preloadVideo = document.createElement('video');
+        preloadVideo.src = src;
+        preloadVideo.preload = 'auto';
+        
+        let timeoutId = null;
+        
+        // Resolve when enough data is loaded to play
+        const onCanPlay = () => {
+          clearTimeout(timeoutId);
+          preloadVideo.removeEventListener('canplay', onCanPlay);
+          preloadVideo.removeEventListener('error', onError);
+          console.log(`Preload: Video ${src} can play`);
+          videoPreloads.set(src, true);
+          resolve(true);
+        };
+        
+        // Also resolve on error to avoid blocking
+        const onError = () => {
+          clearTimeout(timeoutId);
+          preloadVideo.removeEventListener('canplay', onCanPlay);
+          preloadVideo.removeEventListener('error', onError);
+          console.warn(`Preload: Failed to preload video ${src}`);
+          resolve(false);
+        };
+        
+        preloadVideo.addEventListener('canplay', onCanPlay);
+        preloadVideo.addEventListener('error', onError);
+        
+        // Set timeout to resolve anyway after 10 seconds
+        timeoutId = setTimeout(() => {
+          preloadVideo.removeEventListener('canplay', onCanPlay);
+          preloadVideo.removeEventListener('error', onError);
+          console.log(`Preload: Timeout for ${src}`);
+          resolve(false);
+        }, 10000);
+      });
+    }
+
+    /* ======= Video playback with preloading ======= */
+    async function playVideo(src) {
+      // Stop any currently playing video and typing
+      stopCurrentVideo();
+
+      if (!src) { 
+        console.log('PlayVideo: No video source provided');
+        return false; 
+      }
+
+      console.log(`PlayVideo: Attempting to play ${src}`);
+      // Show loading indicator
+      showVideoLoading(true);
+      
+      // Check if video is preloaded
+      const isPreloaded = await preloadVideo(src);
+      console.log(`PlayVideo: Preload status for ${src}: ${isPreloaded}`);
+      
+      // Set video source
+      video.src = src;
+      video.style.display = 'block';
+      image.style.display = 'none';
+      video.load();
+      console.log(`PlayVideo: Source set for ${src}`);
+
+      // Return a promise that resolves when video is playable
+      return new Promise((resolve) => {
+        let timeoutId = null;
+        
+        // If preloaded, play immediately
+        if (isPreloaded) {
+          try {
+            video.muted = false;
+            video.play().then(() => {
+              clearTimeout(timeoutId);
+              console.log(`PlayVideo: Playing ${src} (preloaded)`);
+              showVideoLoading(false);
+              resolve(true);
+            }).catch((e) => {
+              clearTimeout(timeoutId);
+              console.warn(`PlayVideo: Autoplay blocked for ${src}:`, e);
+              showVideoLoading(false);
+              tapToPlay.style.display = 'flex';
+              const once = () => {
+                tapToPlay.style.display = 'none';
+                video.play().catch(() => {});
+                console.log(`PlayVideo: Manual play triggered for ${src}`);
+                tapToPlay.removeEventListener('click', once);
+                resolve(true);
+              };
+              tapToPlay.addEventListener('click', once);
+            });
+          } catch (e) {
+            clearTimeout(timeoutId);
+            console.warn(`PlayVideo: Error playing preloaded ${src}:`, e);
+            showVideoLoading(false);
+            resolve(false);
+          }
+        } else {
+          // Wait for video to load
+          try {
+            const onCanPlay = () => {
+              clearTimeout(timeoutId);
+              video.removeEventListener('canplay', onCanPlay);
+              video.removeEventListener('error', onError);
+              console.log(`PlayVideo: Can play ${src}`);
+              showVideoLoading(false);
+              video.muted = false;
+              video.play().then(() => {
+                console.log(`PlayVideo: Playing ${src} (non-preloaded)`);
+                resolve(true);
+              }).catch((e) => {
+                console.warn(`PlayVideo: Playback error for ${src}:`, e);
+                tapToPlay.style.display = 'flex';
+                const once = () => {
+                  tapToPlay.style.display = 'none';
+                  video.play().catch(() => {});
+                  console.log(`PlayVideo: Manual play triggered for ${src}`);
+                  tapToPlay.removeEventListener('click', once);
+                  resolve(true);
+                };
+                tapToPlay.addEventListener('click', once);
+              });
+            };
+            
+            const onError = (e) => {
+              clearTimeout(timeoutId);
+              video.removeEventListener('canplay', onCanPlay);
+              video.removeEventListener('error', onError);
+              console.warn(`PlayVideo: Load error for ${src}:`, e);
+              showVideoLoading(false);
+              resolve(false);
+            };
+            
+            video.addEventListener('canplay', onCanPlay);
+            video.addEventListener('error', onError);
+
+            // Fallback timeout to avoid hanging
+            timeoutId = setTimeout(() => {
+              video.removeEventListener('canplay', onCanPlay);
+              video.removeEventListener('error', onError);
+              console.log(`PlayVideo: Timeout waiting for ${src}`);
+              showVideoLoading(false);
+              resolve(false);
+            }, 10000);
+          } catch (e) {
+            clearTimeout(timeoutId);
+            console.warn(`PlayVideo: Error handling ${src}:`, e);
+            showVideoLoading(false);
+            resolve(false);
+          }
+        }
+      });
+    }
+
+    unmuteBtn.addEventListener('click', () => {
+      video.muted = !video.muted;
+      unmuteBtn.textContent = video.muted ? '🔊' : '🔈';
+      console.log(`Unmute: Video muted status: ${video.muted}`);
+    });
+
+    /* ======= Help Widget Toggle ======= */
+    helpBtn.addEventListener('click', () => {
+      const isVisible = helpWidget.style.display === 'block';
+      helpWidget.style.display = isVisible ? 'none' : 'block';
+      console.log(`HelpWidget: ${isVisible ? 'Hiding' : 'Showing'} widget`);
+    });
+
+    /* ======= Buttons with improved text handling ======= */
+    function renderButtons(list) {
+      buttonsArea.innerHTML = '';
+      const preloadedVideos = new Set(); // Track preloaded videos to avoid duplicates
+      (list || []).forEach(node => {
+        const b = document.createElement('button');
+        b.className = 'mt-navigation_button';
+        
+        // Add special class for longer text to scale font size
+        if (node.title && node.title.length > 25) {
+          b.classList.add('long-text');
+        }
+        
+        b.type = 'button';
+        b.textContent = node.title;
+        b.addEventListener('click', () => onNode(node));
+        buttonsArea.appendChild(b);
+        
+        // Preload video for this node if it exists and not already preloaded
+        if (node.video && !preloadedVideos.has(node.video)) {
+          preloadedVideos.add(node.video);
+          preloadVideo(node.video);
+        }
+      });
+
+      if (path.length > 0) {
+        const back = document.createElement('button');
+        back.className = 'mt-navigation_button btn-helper';
+        back.type = 'button';
+        back.textContent = '🔙 Πίσω';
+        back.addEventListener('click', goBack);
+        buttonsArea.appendChild(back);
+
+        const home = document.createElement('button');
+        home.className = 'mt-navigation_button btn-helper';
+        home.type = 'button';
+        home.textContent = '🏠 Αρχή';
+        home.addEventListener('click', goHome);
+        buttonsArea.appendChild(home);
+      }
+    }
+    
+    function goBack() {
+      console.log('Navigation: Going back');
+      stopCurrentVideo();
+      path.pop();
+      navigate(path);
+    }
+    
+    function goHome() {
+      console.log('Navigation: Going home');
+      stopCurrentVideo();
+      path = [];
+      navigate(path);
+    }
+    
+    function navigate(p) {
+      let list = data.nodes || [];
+      for (const id of p) {
+        const n = list.find(x => x.id === id);
+        list = (n && n.children) ? n.children : [];
+      }
+      console.log(`Navigation: Rendering buttons for path: ${p.join(' > ')}`);
+      renderButtons(list);
+      // Show placeholder image for home state or any parent node (with children)
+      if (introPlayed && (p.length === 0 || list.length > 0)) {
+        console.log('Navigation: Showing static image for home or parent node');
+        showStaticImage();
+      }
+    }
+
+    /* ======= Node selection ======= */
+    async function onNode(node) {
+      console.log(`Node: Selected node ${node.title || node.id}`);
+      stopCurrentVideo();
+      if (node.children) {
+        path.push(node.id);
+        navigate(path);
+      } else {
+        await playNode(node);
+      }
+    }
+    
+    async function playNode(node) {
+      console.log(`PlayNode: Playing node ${node.title || node.id}`);
+      // If no video, show static image and handle end-link
+      if (!node.video) {
+        console.log(`PlayNode: No video for ${node.title || node.id}, showing static image`);
+        showStaticImage();
+        if (node['end-link']) {
+          console.log(`PlayNode: Rendering end-link: ${node['end-link']}`);
+          captionMeta.innerHTML = '';
+          const a = document.createElement('a');
+          a.href = node['end-link'];
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = '➡ Περισσότερα';
+          a.className = 'cb-caption-link';
+          captionMeta.appendChild(a);
+        }
+        return;
+      }
+
+      const success = await playVideo(node.video);
+      if (success) {
+        console.log(`PlayNode: Displaying caption for ${node.title || node.id}`);
+        typeCaptionTimed(node.text || '', node.duration || 10);
+        // Show placeholder after video ends
+        video.onended = () => {
+          console.log(`PlayNode: Video ended for ${node.title || node.id}, showing static image`);
+          stopCurrentVideo();
+          showStaticImage();
+        };
+      } else {
+        console.log(`PlayNode: Video failed, displaying caption after delay for ${node.title || node.id}`);
+        setTimeout(() => typeCaptionTimed(node.text || '', node.duration || 10), 1000);
+      }
+
+      if (node['end-link']) {
+        console.log(`PlayNode: Rendering end-link: ${node['end-link']}`);
+        captionMeta.innerHTML = '';
+        const a = document.createElement('a');
+        a.href = node['end-link'];
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = '➡ Περισσότερα';
+        a.className = 'cb-caption-link';
+        captionMeta.appendChild(a);
+      }
+    }
+
+    /* ======= Typing with hyperlink support ======= */
+    function typeCaptionTimed(text, durationSec) {
+      cancelAnimationFrame(rafId);
+      clearCaption();
+
+      if (!text) {
+        console.log('Typing: No text provided, skipping animation');
+        return;
+      }
+
+      // Parse markdown-style links [text](url)
+      const linkRegex = /\[([^\]]*)\]\(([^)]+)\)/g;
+      let parsedText = text;
+      const links = [];
+      let match;
+      while ((match = linkRegex.exec(text)) !== null) {
+        links.push({ text: match[1], url: match[2], start: match.index, end: match.index + match[0].length });
+      }
+      console.log(`Typing: Found ${links.length} links in text`);
+
+      const total = Math.max(1, text.length);
+      const durMs = Math.max(50, (durationSec || 1) * 1000);
+      const start = performance.now();
+
+      function scrollCaptionToBottom() {
+        captionText.scrollTop = captionText.scrollHeight;
+      }
+
+      function renderText(count) {
+        let output = '';
+        let lastIndex = 0;
+        const charsToShow = text.substring(0, count);
+
+        for (const link of links) {
+          if (lastIndex < link.start && lastIndex < count) {
+            output += charsToShow.slice(lastIndex, Math.min(link.start, count));
+          }
+          if (count > link.start) {
+            const linkText = link.text.slice(0, Math.max(0, count - link.start));
+            if (linkText) {
+              output += `<a href="${link.url}" target="_blank" rel="noopener" class="cb-caption-link">${linkText}</a>`;
+            }
+            lastIndex = link.start + linkText.length;
+          }
+        }
+
+        if (lastIndex < count) {
+          output += charsToShow.slice(lastIndex, count);
+        }
+
+        return output;
+      }
+
+      function frame(now) {
+        const elapsed = Math.min(durMs, now - start);
+        const frac = elapsed / durMs;
+        const count = Math.floor(frac * total);
+        captionText.innerHTML = renderText(count) + (count < total ? '<span class="blinking-cursor">|</span>' : '');
+        scrollCaptionToBottom();
+        if (elapsed < durMs) {
+          rafId = requestAnimationFrame(frame);
+        } else {
+          captionText.innerHTML = renderText(total);
+          console.log('Typing: Caption completed');
+          scrollCaptionToBottom();
+        }
+      }
+      console.log('Typing: Starting caption animation');
+      rafId = requestAnimationFrame(frame);
+    }
+
+    /* ======= Intro ======= */
+    function injectSkipIntro() {
+      let skip = document.getElementById('cb-skip-intro');
+      if (!skip) {
+        skip = document.createElement('button');
+        skip.id = 'cb-skip-intro';
+        skip.className = 'cb-video-ctl';
+        skip.textContent = '⏭ Skip Intro';
+        skip.addEventListener('click', () => {
+          console.log('Intro: Skipping intro');
+          stopCurrentVideo();
+          setIntroPlayed();
+          skip.remove();
+          console.log('Intro: Showing static image after skip');
+          showStaticImage();
+          goHome();
+        });
+        videoArea.appendChild(skip);
+      }
+      return skip;
+    }
+    
+    async function playIntro() {
+      const intro = data && data.intro; 
+      if (!intro) { 
+        console.log('Intro: No intro data, navigating home');
+        setIntroPlayed();
+        showStaticImage();
+        goHome(); 
+        return; 
+      }
+      console.log('Intro: Starting intro playback');
+      const skip = injectSkipIntro();
+
+      const success = await playVideo(intro.video);
+      if (success) {
+        console.log('Intro: Displaying intro caption');
+        typeCaptionTimed(intro.text || '', intro.duration || 90);
+        // Show placeholder after video ends
+        video.onended = () => {
+          console.log('Intro: Video ended, showing static image');
+          stopCurrentVideo();
+          setIntroPlayed();
+          if (skip) skip.remove();
+          showStaticImage();
+          goHome();
+        };
+      } else {
+        console.log('Intro: Video failed, displaying caption after delay');
+        setTimeout(() => typeCaptionTimed(intro.text || '', intro.duration || 90), 1000);
+        setIntroPlayed();
+        if (skip) skip.remove();
+        console.log('Intro: Showing static image after failure');
+        showStaticImage();
+        goHome();
+      }
+    }
+
+    /* ======= Toggle & init ======= */
+    async function ensureData() {
+      if (data) {
+        console.log('Data: Already loaded');
+        return;
+      }
+      console.log('Data: Fetching from API');
+      try {
+        const res = await fetch(API_ENDPOINT, { cache: 'no-cache' });
+        data = await res.json();
+        console.log('Data: API fetch successful', data);
+        
+        // Preload intro video
+        if (data.intro && data.intro.video) {
+          console.log('Data: Preloading intro video');
+          await preloadVideo(data.intro.video);
+        }
+        
+        // Preload first level of videos
+        if (data.nodes) {
+          console.log('Data: Preloading first-level node videos');
+          const preloadedVideos = new Set();
+          for (const node of data.nodes) {
+            if (node.video && !preloadedVideos.has(node.video)) {
+              preloadedVideos.add(node.video);
+              await preloadVideo(node.video);
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Data: Failed to fetch API data', e);
+      }
+    }
+
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', async () => {
+        const opening = (win.style.display !== 'flex');
+        console.log(`Toggle: ${opening ? 'Opening' : 'Closing'} chatbot`);
+        showWindow(opening);
+        if (!opening) { 
+          stopCurrentVideo(); 
+          return; 
+        }
+
+        await ensureData();
+        renderButtons(data.nodes || []);
+
+        if (!introPlayed || forceIntro) {
+          console.log('Toggle: Playing intro');
+          await playIntro();
+        } else {
+          console.log('Toggle: Intro already played, showing static image');
+          showStaticImage();
+          navigate(path);
+        }
+      });
+    } else {
+      // If there is no toggle, auto-open for debugging
+      console.log('Toggle: No toggle button, auto-opening');
+      (async () => { 
+        await ensureData(); 
+        renderButtons(data.nodes || []); 
+        showWindow(true); 
+        if (!introPlayed || forceIntro) {
+          await playIntro();
+        } else {
+          showStaticImage();
+          navigate(path);
+        }
+      })();
+    }
+  } catch (e) {
+    console.error('Chatbot: Runtime error in script:', e);
+  }
+});
+
+// Confirm script parsing completion
+console.log('Chatbot: Script parsing completed');
+</script>
